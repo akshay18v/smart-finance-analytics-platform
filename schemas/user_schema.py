@@ -8,14 +8,14 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password:str
 # when user logs in 
-class Userlogin(BaseModel):
+class UserLogin(BaseModel):
     email:EmailStr
     password:str
 
 #when returning user profiles(outgoing response)
 class UserResponse(BaseModel):
     id:int
-    Username:str
+    username:str
     email:EmailStr
     created_at:datetime
     
