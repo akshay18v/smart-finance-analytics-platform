@@ -1,16 +1,19 @@
-from fastapi import FastAPI,Depends,HTTPException
+from fastapi import FastAPI,Depends,HTTPException,status
+from fastapi.security import OAuth2PasswordBearer
 from app.database import Base,get_db,engine
 from schemas.expense_schema import ExpenseCreate,ExpenseResponse
-from schemas.user_schema import UserCreate,UserResponse,UserLogin
+from schemas.user_schema import UserCreate,UserResponse,UserLogin,TokenResponse
 from models.user import User
 from models.expense import Expense
 from sqlalchemy.orm import Session
-from core.security import get_password_hash,verify_password
+from core.security import get_password_hash,verify_password,create_access_token
+import jwt
 Base.metadata.create_all(bind=engine)
 
 
 app=FastAPI()
-
+#This tells Fastapi to automatically look for a "Bearer" token in the incoming logs
+oauth2_scheme=OAuth2PasswordBearer(tokenUrl="/login")
 @app.get("/")
 def get_user():
     print("U r ready!!")
@@ -35,7 +38,7 @@ def register_user(user:UserCreate,db:Session=Depends(get_db)):
     db.refresh(new_user)
     return new_user
 # USER LOGIN
-@app.post("/login")
+@app.post("/login",response_model=TokenResponse)
 def login_user(user_credentials:UserLogin,db:Session=Depends(get_db)):
     #look up the user by their email address
     user=db.query(User).filter(User.email==user_credentials.email).first()
@@ -46,9 +49,33 @@ def login_user(user_credentials:UserLogin,db:Session=Depends(get_db)):
     is_password_correct=verify_password(user_credentials.password,user.hashed_password)
     if not is_password_correct:
         raise HTTPException(status_code=400,detail="Invalid Credentials")
+    # The login route handles the "WHO"and create_acess_token handles the "HOW"
+    token_data ={"sub":user.email}
+    access_token=create_access_token(data=token_data)
+    return{"access_token":access_token,"token_type":"bearer"}
+#get current logged-in user
+@app.get("/users/me",response_model=UserResponse)
+def get_current_user(token:str=Depends(oauth2_scheme),db:Session=Depends(get_db)):
     
-    return {"message":"Login sucessful!!","username":user.username}
+    try:
+        # unpack and verify the token using our Secret key
+        payload=jwt.decode(token,"SUPER_SECRET_PLATFORM_KEY_CHANGE_THIS_LATER",algorithms=["HS256"])
+        email:str=payload.get("sub")
+
+        if email is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="Invalid token details")
     
+    except jwt.PyJWTError:
+        #if the token is expired or fake,corrupted, trigger an immediate error
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="could not validate credentials")
+    #look up the verified user inside your postgresql hard drive
+    user=db.query(User).filter(User.email==email).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="User not found")
+    return user #returning user profile data safely
+
+
+     
 
 
 
