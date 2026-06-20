@@ -109,21 +109,21 @@ def get_current_user(token:str=Depends(oauth2_scheme),db:Session=Depends(get_db)
 
 
 #CREATE
-@app.post("/expenses")
-def create_expenses(expense:ExpenseCreate,db:Session=Depends(get_db)):
-    new_expense=Expense(**expense.model_dump())
+@app.post("/expenses",response_model=ExpenseResponse)
+def create_expenses(expense:ExpenseCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    new_expense=Expense(**expense.model_dump(),user_id=current_user.id)
     db.add(new_expense)
     db.commit()
     db.refresh(new_expense)
     return new_expense
-#READ
-@app.get("/expenses")
-def get_all_expenses(db:Session=Depends(get_db)):
-    expenses=db.query(Expense).all()
+#READ 
+@app.get("/expenses" ,response_model=list[ExpenseResponse])
+def get_all_expenses(db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
+    expenses=db.query(Expense).filter(Expense.user_id ==current_user.id).all()
     return expenses
 #READ BY ID
-@app.get("/expenses/{id}")
-def get_expense_by_id(id:int,db:Session=Depends(get_db)):
+@app.get("/expenses/{id}",response_model=ExpenseResponse)
+def get_expense_by_id(id:int,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     expense=db.query(Expense).filter(Expense.id==id).first()
 
     if not expense:
@@ -132,10 +132,13 @@ def get_expense_by_id(id:int,db:Session=Depends(get_db)):
     return expense
 #UPDATE
 @app.put("/expenses/{id}")
-def update_expense(id:int,updated_expense:ExpenseCreate,db:Session=Depends(get_db)):
+def update_expense(id:int,updated_expense:ExpenseCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     expense=db.query(Expense).filter(Expense.id==id).first()
     if not expense:
-        raise HTTPException(status_code=404,detail="expense not found")
+        raise HTTPException(status_code=404,detail="Expense not found")
+    if expense.user_id!=current_user.id:
+        raise HTTPException(status_code=403,detail="Not authorized to edit this expense")
+    
     update_data=updated_expense.model_dump()
     for key,value in update_data.items():
         setattr(expense,key,value)
@@ -144,19 +147,23 @@ def update_expense(id:int,updated_expense:ExpenseCreate,db:Session=Depends(get_d
     return expense
 #DELETE
 @app.delete("/expenses/{id}")
-def delete_expense(id:int,db:Session=Depends(get_db)):
+def delete_expense(id:int,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     expense=db.query(Expense).filter(Expense.id==id).first()
     if not expense:
         raise HTTPException(status_code=404,detail="Expense not found")
+    if expense.user_id!=current_user.id:
+        raise HTTPException(status_code=403,detail="Not authorized to delete this expense")
     db.delete(expense)
     db.commit()
     return {"message":"Expense deleted sucessfully!!!"}
 #PATCH
 @app.patch("/expenses/{id}",response_model=ExpenseResponse)
-def update_fields_expense(id:int,updated_fields:ExpenseCreate,db:Session=Depends(get_db)):
+def update_fields_expense(id:int,updated_fields:ExpenseCreate,db:Session=Depends(get_db),current_user:User=Depends(get_current_user)):
     expense=db.query(Expense).filter(Expense.id==id).first()
     if not expense:
         raise HTTPException(status_code=404,detail="Expense not found")
+    if expense.user_id!=current_user.id:
+        raise HTTPException(status_code=403,detail="Not authorized to modify this expense")
     update_data=updated_fields.model_dump(exclude_unset=True)
     for key,value in update_data.items():
         setattr(expense,key,value)
